@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>多帳號瀏覽器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="toolbar">
+    <strong class="brand">多帳號瀏覽器</strong>
+    <input id="globalUrl" spellcheck="false" placeholder="輸入網址，按 Enter 或「全部前往」讓所有視窗開啟">
+    <button id="goAll">全部前往</button>
+    <button id="add">＋ 新增視窗</button>
+    <label>欄數
+      <select id="cols">
+        <option value="auto">自動</option>
+        <option value="row">單排（左右捲動）</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+    </label>
+    <label id="widthLabel" title="單排模式下每個遊戲畫面的寬度">寬
+      <input id="panelWidth" type="number" min="300" max="3000" step="20">
+    </label>
+    <label title="只顯示其中一個遊戲畫面（其他帳號在背景繼續跑）">顯示
+      <select id="soloSelect"><option value="">全部</option></select>
+    </label>
+    <button id="reloadAll">全部重新整理</button>
+    <span class="sep"></span>
+    <button id="toggleOverview" title="顯示 / 隱藏所有帳號的狀態總覽">📊 總覽</button>
+    <button id="overviewOnly" title="把下面的遊戲畫面縮到最小，只留上方總覽（遊戲照常在跑）"></button>
+    <button id="compactAll" title="所有遊戲視窗只顯示 基本資料 / 目前狀態 / 統計">全部精簡</button>
+    <button id="fullAll" title="所有遊戲視窗還原成完整畫面">全部完整</button>
+  </header>
+  <section id="overview" hidden>
+    <table>
+      <thead><tr></tr></thead>
+      <tbody></tbody>
+      <tfoot><tr></tr></tfoot>
+    </table>
+  </section>
+  <main id="grid"></main>
+  <dialog id="refineDialog" class="mb-dialog">
+    <form method="dialog">
+      <h3>自動精煉：<span id="refineTarget"></span></h3>
+      <p class="hint warn">會實際花費 Zeny 購買金屬與精煉，精煉失敗裝備會損壞。開始前會自動切到完整畫面。</p>
+      <p class="hint">材料依裝備自動判斷：<b>級數一 / 級數二</b>用完會自動向金屬商人購買；
+        <b>神之金屬</b>（武器等級 3、4）與<b>鋁</b>（防具）商店沒賣，背包沒有時會<b>從倉庫領</b>
+        （要在有卡普拉的城鎮；神之金屬原石、鋁原石不能精煉，不會領），倉庫也沒有就停止。<br>
+        安全精煉值（不會壞）：武器 Lv1 +7、Lv2 +6、Lv3 +5、Lv4 +4、防具 +4。</p>
+      <div class="form-grid">
+        <label>目標精煉值 <input name="target" type="number" min="1" max="10"></label>
+        <label>裝備名稱（多個用 | 分隔）<input name="match" spellcheck="false"></label>
+        <label>材料一次購買／從倉庫領出數量 <input name="buyQty" type="number" min="1"></label>
+        <label>保留 Zeny（低於就停止）<input name="minZeny" type="number" min="0"></label>
+      </div>
+      <div id="refineStatus" class="hint"></div>
+      <div class="actions">
+        <button value="close" formnovalidate>關閉</button>
+        <button value="stop" id="refineStop" formnovalidate>停止</button>
+        <button value="start" id="refineStart" class="primary">開始精煉</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="cookieDialog" class="mb-dialog">
+    <form method="dialog">
+      <h3>匯入登入：<span id="cookieTarget"></span></h3>
+      <p class="hint">Google 會擋這類內嵌瀏覽器登入，所以改成在一般瀏覽器登入，再把遊戲的登入 cookie 帶進來：</p>
+      <ol class="hint">
+        <li>用 Chrome 或 Edge 開<b>無痕視窗</b>（Ctrl+Shift+N），到遊戲網站用 Google 登入</li>
+        <li>登入後按 <b>F12</b> → 切到「Network / 網路」分頁 → 按 <b>F5</b> 重新整理</li>
+        <li>在清單找到 <b>me</b> 那一筆 → 按右鍵 → Copy → <b>Copy as cURL (bash)</b> → 整段貼到下面<br>
+          （或點 me → Headers → Request Headers 裡的 <b>Cookie</b>，複製那一串值）</li>
+        <li>匯入成功後直接<b>關掉無痕視窗</b>（不要按登出，登出會讓這組登入失效）</li>
+      </ol>
+      <label class="field">網站 <input id="cookieUrl" spellcheck="false"></label>
+      <textarea id="cookieText" rows="5" spellcheck="false" placeholder="例如：sid=abc123...; other=xyz"></textarea>
+      <div class="actions">
+        <button value="cancel" formnovalidate>取消</button>
+        <button value="ok" class="primary">匯入並重新整理</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>

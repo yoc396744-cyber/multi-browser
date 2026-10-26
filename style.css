@@ -1,0 +1,212 @@
+:root {
+  --bg: #1e1f22;
+  --panel: #2b2d31;
+  --bar: #313338;
+  --border: #3f4147;
+  --text: #e3e5e8;
+  --muted: #9a9ca3;
+  --accent: #4c8dff;
+  --danger: #e5484d;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px "Microsoft JhengHei UI", "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+body { display: flex; flex-direction: column; }
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.brand { margin-right: 4px; white-space: nowrap; }
+
+input, select, button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 26px;
+}
+
+input { padding: 0 8px; min-width: 0; }
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+button { padding: 0 8px; cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--accent); }
+button.danger:hover { border-color: var(--danger); color: var(--danger); }
+label { display: flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
+
+#globalUrl { flex: 1; }
+
+#grid {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  min-height: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.panel:focus-within { border-color: var(--accent); }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bar);
+  flex: none;
+}
+
+.bar button { height: 24px; padding: 0 6px; }
+.bar .name { width: 90px; flex: none; font-weight: bold; }
+.bar .addr { flex: 1; height: 24px; color: var(--muted); }
+.bar .addr:focus { color: var(--text); }
+.bar .zoom { width: 38px; text-align: center; color: var(--muted); flex: none; }
+.bar .loading { color: var(--accent); }
+
+#widthLabel[hidden] { display: none; }
+#panelWidth { width: 70px; }
+
+/* 單排模式：固定寬度、左右捲動 */
+#grid.row-mode {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-columns: var(--panel-w, 560px);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#grid::-webkit-scrollbar { height: 14px; }
+#grid::-webkit-scrollbar-track { background: var(--bg); }
+#grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; border: 3px solid var(--bg); }
+#grid::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* 拖曳排序 */
+.bar .grip {
+  flex: none;
+  padding: 0 4px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  font-size: 15px;
+  line-height: 24px;
+}
+.bar .grip:hover { color: var(--text); }
+body.dragging, body.dragging .bar .grip { cursor: grabbing; user-select: none; }
+body.dragging webview { pointer-events: none; }
+.panel.drag-src { opacity: 0.5; }
+.panel { position: relative; }
+.panel.drop-before::before, .panel.drop-after::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--accent);
+  z-index: 5;
+}
+.panel.drop-before::before { left: 0; }
+.panel.drop-after::before { right: 0; }
+
+.sep { width: 1px; height: 18px; background: var(--border); }
+.bar .mode { height: 24px; flex: none; }
+.bar .mode[hidden] { display: none; }
+.panel.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+#overview {
+  flex: none;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+}
+#overview[hidden] { display: none; }
+#overview table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#overview th, #overview td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+#overview th { position: sticky; top: 0; background: var(--bar); color: var(--muted); font-weight: normal; }
+#overview td.num, #overview th.num { text-align: right; font-variant-numeric: tabular-nums; }
+#overview tbody tr { cursor: pointer; }
+#overview tbody tr:hover { background: var(--bar); }
+#overview tfoot td { font-weight: bold; border-top: 2px solid var(--border); }
+#overview .bad { color: var(--danger); font-weight: bold; }
+#overview .warn { color: #f5a524; }
+#overview .muted { color: var(--muted); }
+
+/* 只看總覽：總覽撐滿視窗，遊戲畫面移到畫面外（保持原尺寸、照常運作，切回來不會重新排版） */
+body.overview-only #overview { flex: 1; max-height: none; border-bottom: none; }
+body.overview-only #grid { position: fixed; left: -100000px; top: 0; width: 100vw; height: 100vh; }
+
+.mb-dialog {
+  width: min(640px, 90vw);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.mb-dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+.mb-dialog h3 { margin: 0 0 8px; }
+.mb-dialog .hint { color: var(--muted); margin: 6px 0; line-height: 1.6; }
+.mb-dialog .hint b { color: var(--text); }
+.mb-dialog .hint.warn { color: #f5a524; }
+.mb-dialog .field { margin: 10px 0 6px; }
+.mb-dialog .field input { flex: 1; }
+.mb-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.mb-dialog .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mb-dialog .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 10px 0; }
+.mb-dialog .form-grid label { flex-direction: column; align-items: stretch; gap: 3px; }
+#refineStatus { min-height: 1.6em; white-space: pre-line; }
+
+/* 單獨顯示：選中的那格撐滿遊戲區，其他移到畫面外（保持尺寸、照常運作） */
+body.solo #grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  grid-auto-flow: row;
+  overflow: hidden;
+}
+body.solo .panel:not(.solo-target) { position: fixed; left: -100000px; top: 0; width: 1200px; height: 800px; }
+body.solo .bar .grip { visibility: hidden; }
+#cookieDialog textarea {
+  width: 100%;
+  font: 12px Consolas, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+#cookieDialog textarea:focus { outline: none; border-color: var(--accent); }
+
+webview { flex: 1; width: 100%; min-height: 0; background: #fff; }
