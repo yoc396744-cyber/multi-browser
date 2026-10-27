@@ -16,7 +16,7 @@ const isAccountPartition = (p) => typeof p === 'string' && /^persist:acc-\d+$/.t
 const SCRIPTS_DIR = path.join(__dirname, 'scripts');
 const RO_HOST = /(^|\.)ro-idle\.app$/i;
 // 頁面載入後自動注入：精簡顯示 + 資料擷取、倉庫小幫手（面板操作才會動作）
-const AUTO_SCRIPTS = ['ro-compact.js', 'ro-storage-helper.js'];
+const AUTO_SCRIPTS = ['ro-compact.js', 'ro-storage-helper.js', 'ro-trade-mover.js'];
 // 會實際花 Zeny / 操作遊戲的腳本：只能由啟動器按鈕手動執行
 const MANUAL_SCRIPTS = ['ro-auto-refine.js'];
 
@@ -92,7 +92,19 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'index.html'));
 }
 
+// 只允許開一個：兩個同時開會搶同一份登入資料和快取（出現 Unable to move the cache 錯誤）
+// 重複開啟時改成把原本的視窗叫到最前面
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows().find(w => !w.getParentWindow());
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
 app.whenReady().then(() => {
+  if (!gotLock) return;
   const ua = cleanUserAgent(app.userAgentFallback);
   app.userAgentFallback = ua;
 

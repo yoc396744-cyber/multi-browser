@@ -20,7 +20,7 @@
 
   const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } };
   const save = (o) => { try { localStorage.setItem(LS_KEY, JSON.stringify(o)); } catch {} };
-  const cfg = Object.assign({ picked: {}, pct: 100, auto: true, filter: '', reserve: 1, useSkill: false, collapsed: false, autoSell: false, sellSkipCards: true, tab: 'w', pickedDep: {} }, load());
+  const cfg = Object.assign({ picked: {}, pct: 100, auto: true, filter: '', reserve: 1, useSkill: false, collapsed: false, autoSell: false, sellSkipCards: true, tab: 'w', pickedDep: {}, main: 'store' }, load());
   const ZENY_CAP = 21e8;               // 遊戲 Zeny 上限
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -33,6 +33,8 @@
   };
 
   // ---------- 道具資料（從遊戲主程式解析） ----------
+  // 布林欄位以最後一個為準（例如券是 {noTrade:!0,…,noTrade:!1}，後面的覆蓋前面的）
+  const lastFlag = (body, k) => { const all = [...body.matchAll(new RegExp(k + ':!([01])', 'g'))]; return all.length ? all[all.length - 1][1] === '0' : false; };
   async function loadDB() {
     let src;
     for (let i = 0; i < 40 && !src; i++) {
@@ -41,16 +43,17 @@
     }
     if (!src) throw new Error('找不到遊戲主程式');
     const js = await origFetch(src).then(r => r.text());
-    const re = /\{id:(\d+),key:`[^`]*`,name:`([^`]*)`/g;
+    // 一般道具是 {id:909,key:…}；特殊道具（廣播、Z幣、券）前面還有 weight/noTrade 等欄位
+    const re = /\{(?:[a-zA-Z]+:[^,{}`]*,){0,8}id:(\d+),key:`[^`]*`,name:`([^`]*)`/g;
     let m;
     while ((m = re.exec(js))) {
       if (DB[m[1]]) continue;
       const seg = js.slice(m.index, m.index + 1500);
       const end = seg.indexOf('{id:', 5);
       const body = end > 0 ? seg.slice(0, end) : seg;
-      const num = (k) => { const x = body.match(new RegExp(k + ':(\\d+)')); return x ? +x[1] : 0; };
+      const num = (k) => { const x = body.match(new RegExp(k + ':(\\d*\\.?\\d+)')); return x ? +x[1] : 0; };   // 重量可能是 .1 這種小數（箭矢）
       const str = (k) => { const x = body.match(new RegExp(k + ':`([^`]*)`')); return x ? x[1] : ''; };
-      DB[m[1]] = { name: m[2], w: num('weight'), sell: num('sell'), slots: num('cardSlots'), cat: str('category'), unidName: str('unidentifiedName') };
+      DB[m[1]] = { name: m[2], w: num('weight'), sell: num('sell'), slots: num('cardSlots'), cat: str('category'), unidName: str('unidentifiedName'), noTrade: lastFlag(m[0] + body.slice(0, body.indexOf('}') + 1), 'noTrade') };
     }
   }
 
@@ -249,6 +252,12 @@
       <div id="rsh-head" style="background:#5b7bd5;color:#fff;padding:4px 8px;font-weight:bold;cursor:move;display:flex">
         <span style="flex:1">倉庫小幫手</span><span id="rsh-toggle" style="cursor:pointer">－</span></div>
       <div id="rsh-body" style="display:flex;flex-direction:column;min-height:0;flex:1">
+        <div style="padding:6px 8px 0;display:flex;gap:4px;border-bottom:1px solid #ccd;padding-bottom:6px">
+          <button data-main="store" style="flex:1;padding:3px">倉庫</button>
+          <button data-main="trade" style="flex:1;padding:3px">交易搬移</button>
+        </div>
+        <div id="rsh-page-trade" style="display:none;flex-direction:column;min-height:0;flex:1"></div>
+        <div id="rsh-page-store" style="display:flex;flex-direction:column;min-height:0;flex:1">
         <div style="padding:6px 8px;border-bottom:1px solid #ccd">
           <div style="font-weight:bold;margin-bottom:3px">自動鑑定（背包）</div>
           <div id="rsh-idinfo" style="color:#555"></div>
@@ -287,6 +296,7 @@
           <div id="rsh-msg" style="padding:0 8px 6px;color:#2a6"></div>
         </div>
         <div id="rsh-nostore" style="padding:6px 8px;color:#888">（在城鎮打開倉庫，這裡會出現「一次領」與「存入」）</div>
+        </div>
       </div>`;
     document.body.appendChild(panel);
     $('#rsh-filter').value = cfg.filter;
@@ -316,6 +326,19 @@
     };
     for (const b of panel.querySelectorAll('[data-tab]')) b.onclick = () => { cfg.tab = b.dataset.tab; save(cfg); applyTab(); };
     applyTab();
+    // 最上層分頁：倉庫 / 交易搬移（交易搬移的內容由 ro-trade-mover.js 放進 #rsh-page-trade）
+    const applyMain = () => {
+      for (const b of panel.querySelectorAll('[data-main]')) {
+        const on = b.dataset.main === cfg.main;
+        b.style.background = on ? '#5b7bd5' : '';
+        b.style.color = on ? '#fff' : '';
+        b.style.fontWeight = on ? 'bold' : '';
+      }
+      $('#rsh-page-store').style.display = cfg.main === 'trade' ? 'none' : 'flex';
+      $('#rsh-page-trade').style.display = cfg.main === 'trade' ? 'flex' : 'none';
+    };
+    for (const b of panel.querySelectorAll('[data-main]')) b.onclick = () => { cfg.main = b.dataset.main; save(cfg); applyMain(); };
+    applyMain();
     $('#rsh-identify').onclick = identifyAll;
     const applyCollapse = () => { $('#rsh-body').style.display = cfg.collapsed ? 'none' : 'flex'; $('#rsh-toggle').textContent = cfg.collapsed ? '＋' : '－'; };
     $('#rsh-toggle').onclick = (e) => { e.stopPropagation(); cfg.collapsed = !cfg.collapsed; save(cfg); applyCollapse(); };
@@ -627,8 +650,8 @@
     }
   }
 
-  // 給其他腳本用（例如自動精煉從倉庫領神之金屬 / 鋁）
-  window.ROStorageHelper = { sendCmd, findSnapshot, findStore };
+  // 給其他腳本用（自動精煉從倉庫領神之金屬 / 鋁、交易搬移）
+  window.ROStorageHelper = { sendCmd, findSnapshot, findStore, DB, kindKey, kindLabel, isEquip, charId: () => guessCharId(findSnapshot()) };
 
   // ---------- 主迴圈 ----------
   async function main() {
