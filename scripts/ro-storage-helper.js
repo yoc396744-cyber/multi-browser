@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         RO放置仙境 倉庫小幫手（鑑定透視 + 一鍵領滿 + 存入 + 領出自動賣 + 自動鑑定）
+// @name         RO放置仙境 倉庫小幫手（鑑定透視 + 一鍵領滿 + 存入 + 直接從倉庫賣 + 存入公會倉庫 + 自動鑑定）
 // @namespace    yo.ro-idle
-// @version      1.3
-// @description  倉庫未鑑定裝備顯示真名；搜尋 / 全選；勾選品項一次領到負重/格數上限，可選領出後自動賣掉；勾選背包品項存入倉庫；自動買放大鏡把背包未鑑定全部鑑定
+// @version      1.5
+// @description  倉庫未鑑定裝備顯示真名；搜尋 / 全選；勾選品項一次領到負重/格數上限，或直接從倉庫賣掉、搬進公會倉庫；勾選背包品項存入倉庫；自動買放大鏡把背包未鑑定全部鑑定
 // @match        https://ro-idle.app/*
 // @grant        none
 // @run-at       document-start
@@ -20,7 +20,7 @@
 
   const load = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } };
   const save = (o) => { try { localStorage.setItem(LS_KEY, JSON.stringify(o)); } catch {} };
-  const cfg = Object.assign({ picked: {}, pct: 100, auto: true, filter: '', reserve: 1, useSkill: false, collapsed: false, autoSell: false, sellSkipCards: true, tab: 'w', pickedDep: {}, main: 'store' }, load());
+  const cfg = Object.assign({ picked: {}, pct: 100, auto: true, filter: '', reserve: 1, useSkill: false, collapsed: false, sellSkipCards: true, tab: 'w', pickedDep: {}, main: 'store' }, load());
   const ZENY_CAP = 21e8;               // 遊戲 Zeny 上限
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -53,7 +53,8 @@
       const body = end > 0 ? seg.slice(0, end) : seg;
       const num = (k) => { const x = body.match(new RegExp(k + ':(\\d*\\.?\\d+)')); return x ? +x[1] : 0; };   // 重量可能是 .1 這種小數（箭矢）
       const str = (k) => { const x = body.match(new RegExp(k + ':`([^`]*)`')); return x ? x[1] : ''; };
-      DB[m[1]] = { name: m[2], w: num('weight'), sell: num('sell'), slots: num('cardSlots'), cat: str('category'), unidName: str('unidentifiedName'), noTrade: lastFlag(m[0] + body.slice(0, body.indexOf('}') + 1), 'noTrade') };
+      const own = m[0] + body.slice(0, body.indexOf('}') + 1);
+      DB[m[1]] = { name: m[2], w: num('weight'), sell: num('sell'), slots: num('cardSlots'), cat: str('category'), unidName: str('unidentifiedName'), noTrade: lastFlag(own, 'noTrade'), noSell: lastFlag(own, 'noSell') };
     }
   }
 
@@ -233,39 +234,58 @@
       if (!tag) {
         tag = document.createElement('span');
         tag.className = 'rsh-real';
-        tag.style.cssText = 'color:#c0392b;font-weight:bold;margin-left:4px';
+        tag.style.cssText = 'color:var(--mb-real);font-weight:bold;margin-left:4px';
         li.appendChild(tag);
       }
       tag.textContent = txt;
     });
   }
 
+  // ---------- 配色 ----------
+  // 跟著遊戲的夜間模式（<html class="night">）切換。遊戲夜間模式會把文字改成淺色、按鈕改成深色，
+  // 面板如果寫死淺色背景就會變成淺字配淺底。交易搬移、自動精煉的狀態框也用這組顏色（.mb-ui）
+  function injectTheme() {
+    if (document.getElementById('mb-theme')) return;
+    const s = document.createElement('style');
+    s.id = 'mb-theme';
+    s.textContent = `
+      :root{--mb-bg:#f7f9ff;--mb-text:#222;--mb-dim:#555;--mb-faint:#777;--mb-off:#aaa;--mb-line:#ccd;--mb-accent:#5b7bd5;--mb-on-accent:#fff;
+        --mb-ok:#2a6;--mb-err:#c00;--mb-warn:#a60;--mb-real:#c0392b}
+      html.night{--mb-bg:#1e222b;--mb-text:#dde2ec;--mb-dim:#aab2c5;--mb-faint:#98a0b3;--mb-off:#5f6678;--mb-line:#3a4152;--mb-accent:#3d5596;--mb-on-accent:#eef2ff;
+        --mb-ok:#7fd27f;--mb-err:#ff6b5e;--mb-warn:#f0a040;--mb-real:#ff8a7a}
+      .mb-ui{color-scheme:light;color:var(--mb-text);background:var(--mb-bg)}
+      html.night .mb-ui{color-scheme:dark}`;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
   // ---------- 面板 ----------
   let panel;
   const $ = (sel) => panel.querySelector(sel);
   function buildPanel() {
+    injectTheme();
     panel = document.createElement('div');
     panel.id = 'rsh-panel';
+    panel.className = 'mb-ui';
     panel.style.cssText = 'position:fixed;right:12px;top:60px;width:min(340px,calc(100vw - 24px));max-height:75vh;display:flex;flex-direction:column;' +
-      'background:#f7f9ff;border:2px solid #5b7bd5;border-radius:6px;font-size:12px;z-index:99999;box-shadow:0 2px 10px rgba(0,0,0,.3)';
+      'border:2px solid var(--mb-accent);border-radius:6px;font-size:12px;z-index:99999;box-shadow:0 2px 10px rgba(0,0,0,.3)';
     panel.innerHTML = `
-      <div id="rsh-head" style="background:#5b7bd5;color:#fff;padding:4px 8px;font-weight:bold;cursor:move;display:flex">
+      <div id="rsh-head" style="background:var(--mb-accent);color:var(--mb-on-accent);padding:4px 8px;font-weight:bold;cursor:move;display:flex">
         <span style="flex:1">倉庫小幫手</span><span id="rsh-toggle" style="cursor:pointer">－</span></div>
       <div id="rsh-body" style="display:flex;flex-direction:column;min-height:0;flex:1">
-        <div style="padding:6px 8px 0;display:flex;gap:4px;border-bottom:1px solid #ccd;padding-bottom:6px">
+        <div style="padding:6px 8px 0;display:flex;gap:4px;border-bottom:1px solid var(--mb-line);padding-bottom:6px">
           <button data-main="store" style="flex:1;padding:3px">倉庫</button>
           <button data-main="trade" style="flex:1;padding:3px">交易搬移</button>
         </div>
         <div id="rsh-page-trade" style="display:none;flex-direction:column;min-height:0;flex:1"></div>
-        <div id="rsh-page-store" style="display:flex;flex-direction:column;min-height:0;flex:1">
-        <div style="padding:6px 8px;border-bottom:1px solid #ccd">
+        <div id="rsh-page-store" style="display:flex;flex-direction:column;min-height:0;flex:1;overflow-y:auto">
+        <div style="padding:6px 8px;border-bottom:1px solid var(--mb-line)">
           <div style="font-weight:bold;margin-bottom:3px">自動鑑定（背包）</div>
-          <div id="rsh-idinfo" style="color:#555"></div>
+          <div id="rsh-idinfo" style="color:var(--mb-dim)"></div>
           <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
             <button id="rsh-identify" style="flex:1;padding:4px;font-weight:bold">買放大鏡並全部鑑定</button>
             <label title="SP 夠就先用商人的物品鑑定技能（SP 10）"><input id="rsh-skill" type="checkbox"> 先用技能</label>
           </div>
-          <div id="rsh-idmsg" style="color:#2a6;margin-top:3px"></div>
+          <div id="rsh-idmsg" style="color:var(--mb-ok);margin-top:3px"></div>
         </div>
         <div id="rsh-store" style="display:flex;flex-direction:column;min-height:0;flex:1">
           <div style="padding:6px 8px 0;display:flex;gap:4px">
@@ -282,20 +302,23 @@
               <label title="留幾格給放大鏡等">留 <input id="rsh-reserve" type="number" min="0" max="99" style="width:36px"> 格</label>
               <label><input id="rsh-auto" type="checkbox"> 自動按取出</label>
             </div>
-            <div style="padding:0 8px 4px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-              <label title="取出完成後，把這次領出的東西直接賣給 NPC（背包原本就有的不會賣）"><input id="rsh-autosell" type="checkbox"> <b>領出後自動賣掉</b></label>
-              <label><input id="rsh-skipcard" type="checkbox"> 不賣卡片</label>
-            </div>
           </div>
-          <div id="rsh-info" style="padding:0 8px 4px;color:#555"></div>
+          <div id="rsh-info" style="padding:0 8px 4px;color:var(--mb-dim)"></div>
           <div id="rsh-list" style="overflow:auto;flex:1;padding:0 8px;min-height:40px"></div>
           <div style="padding:6px 8px;display:flex;gap:6px">
             <button id="rsh-go" style="flex:1;padding:4px;font-weight:bold"></button>
             <button id="rsh-clear" style="padding:4px">清除勾選</button>
           </div>
-          <div id="rsh-msg" style="padding:0 8px 6px;color:#2a6"></div>
+          <div id="rsh-sellrow" style="padding:0 8px 6px;display:flex;gap:6px;align-items:center">
+            <button id="rsh-sell" style="flex:1;padding:4px" title="勾選的品項整疊直接從倉庫賣給 NPC：不用先領出、不看負重，收一次倉庫費（上鎖、不可販售的不會賣）">直接從倉庫賣掉勾選品項</button>
+            <label><input id="rsh-skipcard" type="checkbox"> 不賣卡片</label>
+          </div>
+          <div id="rsh-guildrow" style="padding:0 8px 6px;display:flex">
+            <button id="rsh-guild" style="flex:1;padding:4px" title="勾選的品項從倉庫領到背包、再存進公會倉庫；負重不夠就分好幾趟。只放可以交易、沒上鎖的，每次存取都收一次倉庫費">領出勾選品項存入公會倉庫</button>
+          </div>
+          <div id="rsh-msg" style="padding:0 8px 6px;color:var(--mb-ok)"></div>
         </div>
-        <div id="rsh-nostore" style="padding:6px 8px;color:#888">（在城鎮打開倉庫，這裡會出現「一次領」與「存入」）</div>
+        <div id="rsh-nostore" style="padding:6px 8px;color:var(--mb-faint)">（在城鎮打開倉庫，這裡會出現「一次領」與「存入」）</div>
         </div>
       </div>`;
     document.body.appendChild(panel);
@@ -304,9 +327,9 @@
     $('#rsh-reserve').value = cfg.reserve;
     $('#rsh-auto').checked = cfg.auto;
     $('#rsh-skill').checked = cfg.useSkill;
-    $('#rsh-autosell').checked = cfg.autoSell;
     $('#rsh-skipcard').checked = cfg.sellSkipCards;
-    $('#rsh-autosell').onchange = (e) => { cfg.autoSell = e.target.checked; save(cfg); };
+    $('#rsh-sell').onclick = sellFromStorage;
+    $('#rsh-guild').onclick = toGuild;
     $('#rsh-skipcard').onchange = (e) => { cfg.sellSkipCards = e.target.checked; save(cfg); };
     $('#rsh-filter').oninput = (e) => { cfg.filter = e.target.value; save(cfg); renderList(true); };
     $('#rsh-pct').onchange = (e) => { cfg.pct = Math.min(100, Math.max(1, +e.target.value || 100)); e.target.value = cfg.pct; save(cfg); renderList(true); };
@@ -330,8 +353,8 @@
     const applyMain = () => {
       for (const b of panel.querySelectorAll('[data-main]')) {
         const on = b.dataset.main === cfg.main;
-        b.style.background = on ? '#5b7bd5' : '';
-        b.style.color = on ? '#fff' : '';
+        b.style.background = on ? 'var(--mb-accent)' : '';
+        b.style.color = on ? 'var(--mb-on-accent)' : '';
         b.style.fontWeight = on ? 'bold' : '';
       }
       $('#rsh-page-store').style.display = cfg.main === 'trade' ? 'none' : 'flex';
@@ -377,11 +400,13 @@
   function applyTab() {
     for (const b of panel.querySelectorAll('[data-tab]')) {
       const on = b.dataset.tab === cfg.tab;
-      b.style.background = on ? '#5b7bd5' : '';
-      b.style.color = on ? '#fff' : '';
+      b.style.background = on ? 'var(--mb-accent)' : '';
+      b.style.color = on ? 'var(--mb-on-accent)' : '';
       b.style.fontWeight = on ? 'bold' : '';
     }
     $('#rsh-wopts').style.display = cfg.tab === 'w' ? 'block' : 'none';
+    $('#rsh-sellrow').style.display = cfg.tab === 'w' ? 'flex' : 'none';
+    $('#rsh-guildrow').style.display = cfg.tab === 'w' ? 'flex' : 'none';
     $('#rsh-go').textContent = cfg.tab === 'w' ? '一次領（勾選品項到滿）' : '存入勾選品項';
     $('#rsh-msg').textContent = '';
     renderList(true);
@@ -418,7 +443,8 @@
       const row = document.createElement('label');
       row.style.cssText = 'display:flex;gap:4px;align-items:center;padding:1px 0';
       const fit = Math.min(g.qty, g.w ? Math.floor(cap.freeW / g.w) : g.qty, g.equip ? cap.freeSlots : g.qty);
-      row.innerHTML = `<input type="checkbox"><span style="flex:1">${g.label}</span><span style="color:#777">×${g.qty}・重${g.w}${dep ? '' : '・可領' + fit}</span>`;
+      const locked = g.items.filter(it => it.locked).reduce((a, it) => a + it.qty, 0);
+      row.innerHTML = `<input type="checkbox"><span style="flex:1">${g.label}${locked ? `<span title="上鎖的不會被賣掉" style="color:var(--mb-warn)"> 🔒${locked < g.qty ? locked : ''}</span>` : ''}</span><span style="color:var(--mb-faint)">×${g.qty}・重${g.w}${dep ? '' : '・可領' + fit}</span>`;
       const cb = row.querySelector('input');
       cb.checked = !!picked[g.key];
       cb.onchange = () => { if (cb.checked) picked[g.key] = 1; else delete picked[g.key]; save(cfg); renderList(true); };
@@ -434,24 +460,24 @@
     if (depositing) return;
     const msg = $('#rsh-msg');
     const st = findStorage();
-    if (!st || !st.snap) { msg.style.color = '#c00'; msg.textContent = '找不到倉庫視窗'; return; }
+    if (!st || !st.snap) { msg.style.color = 'var(--mb-err)'; msg.textContent = '找不到倉庫視窗'; return; }
     const picked = bagGroups(st.snap).filter(g => cfg.pickedDep[g.key]);
     const items = picked.flatMap(g => g.items.map(it => ({ uid: it.uid, qty: it.qty })));
-    if (!items.length) { msg.style.color = '#c00'; msg.textContent = '沒有勾選要存的品項（或背包裡已經沒有了）'; return; }
+    if (!items.length) { msg.style.color = 'var(--mb-err)'; msg.textContent = '沒有勾選要存的品項（或背包裡已經沒有了）'; return; }
     // 倉庫格數：同種道具合併為一格，裝備（含未鑑定）每件一格
     const stored = new Set(st.storage.items.filter(x => !x.unidentified && !isEquip(x.itemId)).map(x => x.itemId));
     const need = picked.reduce((n, g) => n + (g.equip || g.unid ? g.items.length : (stored.has(g.itemId) ? 0 : 1)), 0);
     const free = (st.storage.capacity ?? 600) - st.storage.items.length;
-    if (need > free) { msg.style.color = '#c00'; msg.textContent = `倉庫空間不足：需要 ${need} 格，只剩 ${free} 格`; return; }
+    if (need > free) { msg.style.color = 'var(--mb-err)'; msg.textContent = `倉庫空間不足：需要 ${need} 格，只剩 ${free} 格`; return; }
     depositing = true;
     $('#rsh-go').disabled = true;
-    msg.style.color = '#2a6';
+    msg.style.color = 'var(--mb-ok)';
     msg.textContent = `存入中 ${picked.length} 項…`;
     try {
       for (let i = 0; i < items.length; i += 100) await sendCmd({ type: 'storageDeposit', items: items.slice(i, i + 100) });
       msg.textContent = '已存入：' + picked.map(g => `${g.label} ×${g.qty}`).join('、');
     } catch (e) {
-      msg.style.color = '#c00';
+      msg.style.color = 'var(--mb-err)';
       msg.textContent = '存入失敗：' + e.message;
     } finally {
       depositing = false;
@@ -462,7 +488,7 @@
   function withdraw() {
     const msg = $('#rsh-msg');
     const st = findStorage();
-    if (!st || !st.setWithdraw || !st.snap) { msg.style.color = '#c00'; msg.textContent = '找不到倉庫視窗'; return; }
+    if (!st || !st.setWithdraw || !st.snap) { msg.style.color = 'var(--mb-err)'; msg.textContent = '找不到倉庫視窗'; return; }
     const cap = capacity(st.snap);
     let freeW = cap.freeW, freeSlots = cap.freeSlots;
     const bagIds = new Set(st.snap.inventory.map(x => x.itemId));
@@ -484,23 +510,10 @@
       }
       if (n) done.push(`${g.label} ×${n}`);
     }
-    if (!done.length) { msg.style.color = '#c00'; msg.textContent = '沒有可領的（沒勾品項，或負重/格數已滿）'; return; }
+    if (!done.length) { msg.style.color = 'var(--mb-err)'; msg.textContent = '沒有可領的（沒勾品項，或負重/格數已滿）'; return; }
     st.setWithdraw(sel);
-    msg.style.color = '#2a6';
+    msg.style.color = 'var(--mb-ok)';
     msg.textContent = '已勾選：' + done.join('、');
-    if (cfg.autoSell) {
-      // 記下領出前的背包與這次要領的數量，取出完成後只賣多出來的部分
-      const bySid = new Map(st.storage.items.map(x => [String(x.sid), x]));
-      const want = new Map();
-      for (const [sid, q] of Object.entries(sel)) {
-        const it = bySid.get(String(sid));
-        if (!it) continue;
-        const k = itemKey(it);
-        want.set(k, (want.get(k) || 0) + q);
-      }
-      pendingSell = { before: new Map(st.snap.inventory.map(x => [x.uid, x.qty])), want, at: Date.now() };
-      msg.textContent += '（取出後會自動賣掉）';
-    }
     if (cfg.auto) {
       setTimeout(() => {
         const btn = [...document.querySelectorAll('button')].find(b => /^取出\s*\d+\s*項/.test(b.textContent.trim()));
@@ -510,87 +523,189 @@
     }
   }
 
-  // ---------- 5. 領出後自動賣掉 ----------
-  // 手動買賣目前不限地點（遊戲設定 anywhere），所以不用移動，取出完成後直接賣
-  let pendingSell = null;   // { before: Map(uid -> qty), want: Map(itemKey -> qty), at }
+  // ---------- 5. 直接從倉庫賣 ----------
+  // 遊戲的 storageSell：倉庫裡的東西直接賣給 NPC，不用先領出、不看負重；要在有卡普拉的城鎮，每次收一次倉庫費
+  const SELL_MAX = 100;     // 遊戲畫面一次最多賣 100 項
   let selling = false;
-  const itemKey = (it) => it.itemId + (it.unidentified ? 'U' : '');
   // 商人「高價賣出」加成，與遊戲公式相同
   const overchargePct = (ch) => { const lv = (ch.skills || {}).MC_OVERCHARGE || 0; return lv > 0 ? 5 + lv * 2 - (lv === 10 ? 1 : 0) : 0; };
 
-  // 比對領出前後的背包，找出這次領出的東西（數量不超過要領的量）
-  function withdrawnItems(p, snap) {
-    const want = new Map(p.want);
-    const out = [];
-    for (const it of snap.inventory) {
-      const prev = p.before.get(it.uid) || 0;
-      const inc = it.qty - prev;
-      const left = want.get(itemKey(it)) || 0;
-      if (inc <= 0 || left <= 0) continue;
-      const qty = Math.min(inc, left);
-      want.set(itemKey(it), left - qty);
-      out.push({ it, qty, whole: prev === 0 && qty === it.qty });
-    }
-    return out;
-  }
-
-  function checkPendingSell() {
-    if (!pendingSell || selling) return;
+  async function sellFromStorage() {
+    if (selling) return;
     const msg = $('#rsh-msg');
-    if (Date.now() - pendingSell.at > 60000) {
-      pendingSell = null;
-      msg.style.color = '#c00';
-      msg.textContent = '等不到取出結果，沒有自動賣出';
+    const st = findStorage();
+    if (!st || !st.snap) { msg.style.color = 'var(--mb-err)'; msg.textContent = '找不到倉庫視窗'; return; }
+    const pct = 100 + overchargePct(st.snap.character);
+    const skipped = [], list = [];
+    for (const g of groups(st).filter(g => cfg.picked[g.key])) {
+      const d = DB[g.itemId] || {};
+      const why = cfg.sellSkipCards && d.cat === 'card' ? '卡片' : d.noSell || !d.sell ? '不可販售' : '';
+      if (why) { skipped.push(`${g.label}（${why}）`); continue; }
+      const open = g.items.filter(it => !it.locked);
+      if (open.length < g.items.length) skipped.push(`${g.label} ×${g.items.filter(it => it.locked).reduce((a, it) => a + it.qty, 0)}（上鎖）`);
+      for (const it of open) list.push({ g, it, gain: Math.floor(d.sell * pct / 100) * it.qty });
+    }
+    const skipText = skipped.length ? `；不賣：${skipped.join('、')}` : '';
+    if (!list.length) { msg.style.color = 'var(--mb-err)'; msg.textContent = '沒有可賣的品項' + skipText; return; }
+
+    const total = list.reduce((a, x) => a + x.gain, 0);
+    if (st.snap.character.zeny + total > ZENY_CAP) {
+      msg.style.color = 'var(--mb-err)';
+      msg.textContent = `賣出後 Zeny 會超過上限（約 +${total.toLocaleString()}），請先把身上的 Zeny 存入倉庫`;
       return;
     }
-    const snap = findSnapshot();
-    if (!snap) return;
-    const got = withdrawnItems(pendingSell, snap);
-    if (!got.length) return;           // 還沒取出
-    pendingSell = null;
-    sellWithdrawn(got, snap);
-  }
-
-  async function sellWithdrawn(got, snap) {
-    const msg = $('#rsh-msg');
-    const skipped = [];
-    const list = got.filter(({ it, qty }) => {
-      const d = DB[it.itemId] || {};
-      const name = `${it.unidentified ? (d.unidName || '?') + '（未鑑定）' : realName(it.itemId)} ×${qty}`;
-      if (cfg.sellSkipCards && d.cat === 'card') { skipped.push(name + '（卡片）'); return false; }
-      if (!d.sell) { skipped.push(name + '（不可販售）'); return false; }
-      return true;
-    });
-    const skipText = skipped.length ? `；未賣：${skipped.join('、')}` : '';
-    if (!list.length) { msg.style.color = '#c00'; msg.textContent = '沒有可賣的東西' + skipText; return; }
-
-    const pct = 100 + overchargePct(snap.character);
-    const total = list.reduce((s, { it, qty }) => s + Math.floor(DB[it.itemId].sell * pct / 100) * qty, 0);
-    if (snap.character.zeny + total > ZENY_CAP) {
-      msg.style.color = '#c00';
-      msg.textContent = `賣出後 Zeny 會超過上限（約 +${total.toLocaleString()}），沒有自動賣出，請先把 Zeny 存入倉庫`;
-      return;
-    }
+    const kinds = [...new Set(list.map(x => x.g))];
+    const batches = Math.ceil(list.length / SELL_MAX);
+    const fee = (st.storage.fees || {})[st.snap.mapId];
+    const feeText = fee != null ? `倉庫費 ${(fee * batches).toLocaleString()} Zeny` : `倉庫費 ${batches} 次`;
+    if (!confirm(`直接從倉庫賣掉 ${kinds.length} 種（${list.length} 項），約得到 ${total.toLocaleString()} Zeny（${feeText}）：\n\n` +
+      kinds.map(g => `${g.label} ×${list.filter(x => x.g === g).reduce((a, x) => a + x.it.qty, 0)}`).join('\n') +
+      (skipped.length ? `\n\n不賣：${skipped.join('、')}` : '') + '\n\n要賣嗎？')) return;
 
     selling = true;
-    msg.style.color = '#2a6';
+    $('#rsh-sell').disabled = true;
+    msg.style.color = 'var(--mb-ok)';
     msg.textContent = `賣出中 ${list.length} 項…`;
     let sold = 0;
     try {
-      // 整疊都是這次領出的：一次批次賣；疊在原本就有的那疊上：只賣多出來的數量
-      const whole = list.filter(x => x.whole);
-      if (whole.length) { await sendCmd({ type: 'sellBatch', uids: whole.map(x => x.it.uid) }); sold += whole.length; }
-      for (const x of list.filter(x => !x.whole)) {
-        await sendCmd({ type: 'sell', uid: x.it.uid, qty: x.qty });
-        sold++;
-        await sleep(250);
+      for (let i = 0; i < list.length; i += SELL_MAX) {
+        const part = list.slice(i, i + SELL_MAX);
+        await sendCmd({ type: 'storageSell', items: part.map(x => ({ sid: x.it.sid, qty: x.it.qty })) });
+        sold += part.length;
       }
-      msg.textContent = `已賣出 ${sold} 項，約 ${total.toLocaleString()} Zeny` + skipText;
+      for (const g of kinds) if (!g.items.some(it => it.locked)) delete cfg.picked[g.key];   // 賣光的取消勾選，免得之後又存進同種的被誤賣
+      save(cfg);
+      msg.textContent = `已從倉庫賣出 ${kinds.length} 種，約 ${total.toLocaleString()} Zeny` + skipText;
     } catch (e) {
-      msg.style.color = '#c00';
+      msg.style.color = 'var(--mb-err)';
       msg.textContent = `賣出中斷（已賣 ${sold} / ${list.length} 項）：${e.message}` + skipText;
     } finally {
       selling = false;
+      $('#rsh-sell').disabled = false;
+      renderList(true);
+    }
+  }
+
+  // ---------- 6. 領出存入公會倉庫 ----------
+  // 公會倉庫只能從背包存入（guildStorageDeposit），所以先從倉庫領到背包、再存進去，負重或背包格不夠就分好幾趟。
+  // 只收可以交易、沒上鎖的物品；倉庫與公會倉庫每次存取各收一次當地倉庫費
+  const MOVE_MAX = 100;     // 遊戲一次最多存入 / 取出 100 項
+  let toGuildBusy = false;
+  async function apiGet(path) {
+    const r = await origFetch(path, { credentials: 'same-origin', headers: { 'x-ro-client': '1' } });
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+    return j;
+  }
+  // 公會倉庫格數：同種道具合併為一格，裝備（含未鑑定）每件一格（與個人倉庫相同）
+  const stackable = (it) => !it.unidentified && !isEquip(it.itemId);
+
+  async function toGuild() {
+    if (toGuildBusy) return;
+    const msg = $('#rsh-msg'), btn = $('#rsh-guild');
+    const fail = (t) => { msg.style.color = 'var(--mb-err)'; msg.textContent = t; };
+    const st = findStorage();
+    if (!st || !st.snap) return fail('找不到倉庫視窗');
+    const skipped = [], kinds = [];
+    for (const g of groups(st).filter(g => cfg.picked[g.key])) {
+      if ((DB[g.itemId] || {}).noTrade) { skipped.push(`${g.label}（不能交易）`); continue; }
+      const locked = g.items.filter(it => it.locked).reduce((a, it) => a + it.qty, 0);
+      if (locked) skipped.push(`${g.label} ×${locked}（上鎖）`);
+      if (locked < g.qty) kinds.push(g);
+    }
+    const skipText = skipped.length ? `；不放：${skipped.join('、')}` : '';
+    if (!kinds.length) return fail('沒有可以放進公會倉庫的品項' + skipText);
+
+    const cid = guessCharId(st.snap);
+    if (!cid) return fail('抓不到角色 ID，隨便操作一下遊戲再試');
+    let gs;
+    try { gs = await apiGet(`/api/characters/${cid}/guild/storage`); }
+    catch (e) { return fail('讀不到公會倉庫（要先加入公會）：' + e.message); }
+    if (!gs.unlock || !gs.unlock.unlocked) return fail('公會倉庫還沒開通（公會頁可以看開通條件）');
+    let gFree = gs.capacity - gs.items.length;
+    const gIds = new Set(gs.items.filter(stackable).map(x => x.itemId));
+    const fee = (st.storage.fees || {})[st.snap.mapId];
+    if (!confirm(`把 ${kinds.length} 種從倉庫領出、存入公會倉庫（公會倉庫還有 ${gFree} 格）：\n\n` +
+      kinds.map(g => `${g.label} ×${g.items.filter(it => !it.locked).reduce((a, it) => a + it.qty, 0)}`).join('\n') +
+      (skipped.length ? `\n\n不放：${skipped.join('、')}` : '') +
+      `\n\n負重不夠會分好幾趟，每趟收 2 次倉庫費${fee != null ? `（${(fee * 2).toLocaleString()} Zeny）` : ''}。要開始嗎？`)) return;
+
+    toGuildBusy = true;
+    btn.disabled = true;
+    msg.style.color = 'var(--mb-ok)';
+    const moved = new Map();   // kindKey -> 已存入數量
+    const movedText = () => [...moved].map(([k, n]) => `${kinds.find(g => g.key === k).label} ×${n}`).join('、');
+    let full = false;
+    let snap = st.snap;      // 用指令回應裡的角色資料，不等畫面重畫
+    try {
+      for (let round = 1; ; round++) {
+        const storage = (await apiGet('/api/storage')).storage;
+        const rows = storage.items.filter(it => !it.locked && kinds.some(g => g.key === kindKey(it)));
+        if (!rows.length) break;
+        // 這一趟要領的：背包負重 / 格數、公會倉庫格數都要放得下
+        const cap = capacity(snap);
+        let freeW = cap.freeW, freeSlots = cap.freeSlots, gLeft = gFree;
+        const bagIds = new Set(snap.inventory.filter(stackable).map(x => x.itemId));
+        const gNew = new Set(gIds);
+        const items = [];
+        for (const it of rows) {
+          if (items.length >= MOVE_MAX) break;
+          const w = (DB[it.itemId] || {}).w || 0;
+          const bagSlot = !stackable(it) || !bagIds.has(it.itemId);
+          const gSlot = !stackable(it) || !gNew.has(it.itemId);
+          if ((bagSlot && freeSlots < 1) || (gSlot && gLeft < 1)) { if (gSlot && gLeft < 1) full = true; continue; }
+          const q = w ? Math.min(it.qty, Math.floor(freeW / w + 1e-9)) : it.qty;
+          if (q < 1) continue;
+          items.push({ sid: it.sid, qty: q });
+          freeW -= q * w;
+          if (bagSlot) { freeSlots--; if (stackable(it)) bagIds.add(it.itemId); }
+          if (gSlot) { gLeft--; if (stackable(it)) gNew.add(it.itemId); }
+        }
+        if (!items.length) {
+          if (!full) fail(`負重或背包格不夠，領不出來（先清一下背包）` + (moved.size ? `。已存入：${movedText()}` : ''));
+          break;
+        }
+        msg.textContent = `第 ${round} 趟：從倉庫領出 ${items.length} 項…`;
+        const before = new Map(snap.inventory.map(x => [x.uid, x.qty]));
+        const j = await sendCmd({ type: 'storageWithdraw', items });
+        const after = (j.view && j.view.snapshot) || findSnapshot();
+        // 背包裡多出來的就是剛領的（可堆疊的會併進原本那疊，只存多出來的數量）
+        const dep = [];
+        for (const it of after.inventory) {
+          const inc = it.qty - (before.get(it.uid) || 0);
+          if (inc > 0 && kinds.some(g => g.key === kindKey(it))) dep.push({ it, qty: inc });
+        }
+        if (!dep.length) throw new Error('領出後背包裡找不到剛領的東西');
+        msg.textContent = `第 ${round} 趟：存入公會倉庫 ${dep.length} 項…`;
+        for (let i = 0; i < dep.length; i += MOVE_MAX) {
+          const part = dep.slice(i, i + MOVE_MAX);
+          const r = await sendCmd({ type: 'guildStorageDeposit', items: part.map(x => ({ uid: x.it.uid, qty: x.qty })) });
+          for (const x of part) { const k = kindKey(x.it); moved.set(k, (moved.get(k) || 0) + x.qty); }
+          snap = (r.view && r.view.snapshot) || findSnapshot() || snap;
+          if (r.guildStorage) {
+            gFree = r.guildStorage.capacity - r.guildStorage.items.length;
+            for (const x of r.guildStorage.items) if (stackable(x)) gIds.add(x.itemId);
+          } else {
+            gFree = gLeft;
+            for (const x of gNew) gIds.add(x);
+          }
+        }
+        if (full) break;
+        await sleep(300);
+      }
+      if (full) fail(`公會倉庫滿了` + (moved.size ? `，已存入：${movedText()}` : '') + skipText);
+      else if (moved.size) {
+        msg.style.color = 'var(--mb-ok)';
+        msg.textContent = `已存入公會倉庫：${movedText()}` + skipText;
+      }
+      for (const g of kinds) if (!g.items.some(it => it.locked) && moved.get(g.key) >= g.qty) delete cfg.picked[g.key];
+      save(cfg);
+    } catch (e) {
+      fail(`中斷：${e.message}` + (moved.size ? `（已存入：${movedText()}；剛領出還沒存進去的在背包裡）` : '（剛領出的在背包裡）'));
+    } finally {
+      toGuildBusy = false;
+      btn.disabled = false;
+      renderList(true);
     }
   }
 
@@ -606,8 +721,8 @@
     if (identifying) { identifying = false; return; }   // 再按一次＝停止
     const msg = $('#rsh-idmsg'), btn = $('#rsh-identify');
     let snap = findSnapshot();
-    if (!snap) { msg.style.color = '#c00'; msg.textContent = '讀不到角色資料'; return; }
-    identifying = true; btn.textContent = '停止'; msg.style.color = '#2a6';
+    if (!snap) { msg.style.color = 'var(--mb-err)'; msg.textContent = '讀不到角色資料'; return; }
+    identifying = true; btn.textContent = '停止'; msg.style.color = 'var(--mb-ok)';
     const found = {};
     try {
       let todo = snap.inventory.filter(x => x.unidentified).map(x => x.uid);
@@ -643,7 +758,7 @@
       }
       msg.textContent = `完成 ${n} 件：` + Object.entries(found).map(([k, v]) => `${k} ×${v}`).join('、');
     } catch (e) {
-      msg.style.color = '#c00';
+      msg.style.color = 'var(--mb-err)';
       msg.textContent = '中斷：' + e.message + (Object.keys(found).length ? '（已鑑定：' + Object.entries(found).map(([k, v]) => `${k} ×${v}`).join('、') + '）' : '');
     } finally {
       identifying = false; btn.textContent = '買放大鏡並全部鑑定';
@@ -663,7 +778,6 @@
       panel.style.display = snap ? 'flex' : 'none';
       if (!snap) return;
       renderIdInfo(snap);
-      checkPendingSell();
       const st = findStorage();
       $('#rsh-store').style.display = st ? 'flex' : 'none';
       $('#rsh-nostore').style.display = st ? 'none' : 'block';

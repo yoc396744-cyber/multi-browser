@@ -23,8 +23,10 @@
 (() => {
   if (window.ROCompact) { window.ROCompact.refresh(); return; }
 
-  // 各模式要留下的區塊（legend 開頭比對）；full = 完整畫面
-  const KEEP = { compact: ['基本資料', '目前狀態', '統計'], stats: ['統計'] };
+  // 主控台右欄的區塊名稱（legend 開頭比對）。遊戲 p6.30 把「基本資料」改成「角色」、「移動」「目前狀態」合併成「地點與戰況」，新舊都認
+  const BASIC = ['角色', '基本資料'], STATUS = ['地點與戰況', '目前狀態'], STATS = ['統計'];
+  // 各模式要留下的區塊；full = 完整畫面
+  const KEEP = { compact: [...BASIC, ...STATUS, ...STATS], stats: STATS };
   const MODES = ['compact', 'stats', 'full'];
   const LABEL = { compact: '精簡', stats: '僅統計', full: '完整畫面' };
   const STORE_KEY = 'roCompactMode';
@@ -58,8 +60,9 @@
   const txt = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : '');
   const num = (s) => { const m = String(s ?? '').replace(/,/g, '').match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
   const pair = (s) => { const m = String(s ?? '').replace(/,/g, '').match(/(\d+)\s*\/\s*(\d+)/); return m ? { cur: +m[1], max: +m[2] } : null; };
-  const legendOf = (el) => txt(el.querySelector(':scope > legend'));
-  const findGroup = (name) => [...document.querySelectorAll('aside fieldset')].find((f) => legendOf(f).startsWith(name));
+  // 可收合的區塊 legend 前面會多一個 ▼ / ▶
+  const legendOf = (el) => txt(el.querySelector(':scope > legend')).replace(/^[▼▶]\s*/, '');
+  const findGroup = (names) => [...document.querySelectorAll('aside fieldset')].find((f) => names.some((n) => legendOf(f).startsWith(n)));
 
   // ---------- 標記要隱藏的元素 ----------
   function tag() {
@@ -114,7 +117,7 @@
 
   // ---------- 資料擷取 ----------
   function parseBasic() {
-    const g = findGroup('基本資料');
+    const g = findGroup(BASIC);
     if (!g) return null;
     const head = g.querySelector('div.grid > div');
     const spans = [...g.querySelectorAll('span')];
@@ -147,7 +150,7 @@
   }
 
   // 負重可能帶小數（523.4 / 3,200）、冒號或百分比（負重：27% (1234/5678)），
-  // 先找「基本資料」，找不到再擴大到整個主畫面
+  // 先找「角色」區塊，找不到再擴大到整個主畫面
   const WEIGHT_RE = /負重[^/]{0,15}?(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/;
   function parseWeight(g) {
     for (const src of [g, document.querySelector('main'), document.body]) {
@@ -161,7 +164,7 @@
   }
 
   // 剩餘點數：「尚有 59 點屬性點」「尚有 2 點技能點、3 點屬性點」「屬性點：3」都能抓；
-  // 先找「基本資料」，找不到再擴大到整個主畫面；畫面上沒出現就當作 0
+  // 先找「角色」區塊，找不到再擴大到整個主畫面；畫面上沒出現就當作 0
   function parsePoints(g, label) {
     const res = [new RegExp(`(\\d+)\\s*點\\s*${label}`), new RegExp(`${label}[^\\d]{0,6}(\\d+)`)];
     for (const src of [g, document.querySelector('main')]) {
@@ -175,7 +178,7 @@
   }
 
   function parseStatus() {
-    const g = findGroup('目前狀態');
+    const g = findGroup(STATUS);
     if (!g) return null;
     const out = {};
     const map = { '地圖': 'map', '行動': 'action', '目標': 'target', '儲存點': 'savePoint' };
@@ -191,7 +194,7 @@
   }
 
   function parseStats() {
-    const g = findGroup('統計');
+    const g = findGroup(STATS);
     if (!g) return null;
     const map = { '掛機時間': 'idleTime', '擊殺數': 'kills', 'Base EXP / 時': 'baseExpPerHour', 'Job EXP / 時': 'jobExpPerHour', '死亡次數': 'deaths' };
     const out = {};

@@ -36,6 +36,7 @@
   const DB = () => (H() && H().DB) || {};
   const wOf = (id) => (DB()[id] || {}).w || 0;
   const tradable = (it) => {
+    if (it.locked) return false;       // 上鎖的裝備 / 卡片不能交易
     const d = DB()[it.itemId];
     if (d) return !d.noTrade;
     return it.itemId < 900000 || TRADABLE_SPECIAL.has(it.itemId);
@@ -107,9 +108,9 @@
           <div id="rtm-list" style="overflow:auto;flex:1;padding:0 8px;min-height:60px"></div>
           <div style="padding:4px 8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <label>Zeny 也搬 <input id="rtm-zeny" type="number" min="0" style="width:110px"></label>
-            <span id="rtm-zinfo" style="color:#777"></span>
+            <span id="rtm-zinfo" style="color:var(--mb-faint)"></span>
           </div>
-          <div id="rtm-sum" style="padding:0 8px 4px;color:#555"></div>
+          <div id="rtm-sum" style="padding:0 8px 4px;color:var(--mb-dim)"></div>
           <div style="padding:4px 8px;display:flex;gap:6px">
             <button id="rtm-go" style="flex:1;padding:4px;font-weight:bold">開始搬移</button>
             <button id="rtm-clear" style="padding:4px">清除勾選</button>
@@ -122,9 +123,9 @@
           <label style="display:block;margin-bottom:3px"><input id="rtm-recvdep" type="checkbox"> 收到的東西自動存入倉庫</label>
           <label style="display:block;margin-bottom:3px"><input id="rtm-recvzeny" type="checkbox"> 收到的 Zeny 也存入倉庫</label>
           <button id="rtm-recvon" style="width:100%;padding:4px;font-weight:bold;margin-top:4px"></button>
-          <div style="color:#777;margin-top:4px">只會自動確認「我方沒放任何東西」的交易；我方有放東西時要自己按。</div>
+          <div style="color:var(--mb-faint);margin-top:4px">只會自動確認「我方沒放任何東西」的交易；我方有放東西時要自己按。</div>
         </div>
-        <div id="rtm-msg" style="padding:0 8px 6px;color:#2a6;white-space:pre-line;max-height:7em;overflow:auto"></div>
+        <div id="rtm-msg" style="padding:0 8px 6px;color:var(--mb-ok);white-space:pre-line;max-height:7em;overflow:auto"></div>
       </div>`;
     host.appendChild(panel);
 
@@ -170,8 +171,8 @@
   function applyRole() {
     for (const b of panel.querySelectorAll('[data-role]')) {
       const on = b.dataset.role === cfg.role;
-      b.style.background = on ? '#5b7bd5' : '';
-      b.style.color = on ? '#fff' : '';
+      b.style.background = on ? 'var(--mb-accent)' : '';
+      b.style.color = on ? 'var(--mb-on-accent)' : '';
       b.style.fontWeight = on ? 'bold' : '';
     }
     $('#rtm-send').style.display = cfg.role === 's' ? 'flex' : 'none';
@@ -181,8 +182,8 @@
   function renderRecv() {
     const b = $('#rtm-recvon');
     b.textContent = cfg.recvOn ? `停止接收（接收 ${cfg.from} 中）` : '開始接收';
-    b.style.background = cfg.recvOn ? '#5b7bd5' : '';
-    b.style.color = cfg.recvOn ? '#fff' : '';
+    b.style.background = cfg.recvOn ? 'var(--mb-accent)' : '';
+    b.style.color = cfg.recvOn ? 'var(--mb-on-accent)' : '';
     renderBadge();
   }
   // 在小幫手的分頁按鈕上顯示狀態，切到「倉庫」分頁時也看得到
@@ -192,7 +193,7 @@
   }
   function say(text, err) {
     const m = $('#rtm-msg');
-    m.style.color = err ? '#c00' : '#2a6';
+    m.style.color = err ? 'var(--mb-err)' : 'var(--mb-ok)';
     m.textContent = text;
     console.log('[交易搬移]', text);
   }
@@ -213,8 +214,8 @@
   function kinds(storage, s) {
     const h = H(), eq = equippedSet(s), m = new Map();
     const add = (it, where) => {
-      const k = h.kindKey(it);
-      if (!m.has(k)) m.set(k, { key: k, label: h.kindLabel(it), w: wOf(it.itemId), ok: tradable(it), store: 0, bag: 0 });
+      const k = (it.locked ? 'L' : '') + h.kindKey(it);     // 上鎖的另外列一行（不能交易）
+      if (!m.has(k)) m.set(k, { key: k, label: (it.locked ? '🔒 ' : '') + h.kindLabel(it), w: wOf(it.itemId), ok: tradable(it), locked: !!it.locked, store: 0, bag: 0 });
       m.get(k)[where] += it.qty;
     };
     for (const it of (storage && storage.items) || []) add(it, 'store');
@@ -243,17 +244,17 @@
     list.innerHTML = '';
     if (storageErr && cfg.fromStorage) {
       const p = document.createElement('div');
-      p.style.color = '#c00';
+      p.style.color = 'var(--mb-err)';
       p.textContent = `讀不到倉庫：${storageErr}（要在有卡普拉的城鎮）`;
       list.appendChild(p);
     }
     for (const k of shown) {
       const row = document.createElement('label');
-      row.style.cssText = 'display:flex;gap:4px;align-items:center;padding:1px 0' + (k.ok ? '' : ';color:#aaa');
+      row.style.cssText = 'display:flex;gap:4px;align-items:center;padding:1px 0' + (k.ok ? '' : ';color:var(--mb-off)');
       const where = [cfg.fromStorage && k.store ? `倉${k.store}` : '', cfg.fromBag && k.bag ? `包${k.bag}` : ''].filter(Boolean).join('・');
-      row.innerHTML = `<input type="checkbox"><span style="flex:1"></span><span style="color:#777"></span>`;
+      row.innerHTML = `<input type="checkbox"><span style="flex:1"></span><span style="color:var(--mb-faint)"></span>`;
       row.children[1].textContent = k.label;
-      row.children[2].textContent = k.ok ? `${where}・重${k.w}` : '不可交易';
+      row.children[2].textContent = k.ok ? `${where}・重${k.w}` : k.locked ? `${where}・已上鎖` : '不可交易';
       const cb = row.querySelector('input');
       cb.disabled = !k.ok;
       cb.checked = k.ok && !!cfg.picked[k.key];
